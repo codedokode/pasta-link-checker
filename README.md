@@ -20,3 +20,4 @@ The response status and response body are cache in a state.json file, so the scr
 - the cacert bundle needs update mechanism. We should replace it with https://github.com/composer/ca-bundle
 - the scripts considers all non-html pages to be invalid (PDF, images)
 - script cannot check for parked domains
+- robots.txt is not supported
