@@ -17,6 +17,6 @@ The response status and response body are cache in a state.json file, so the scr
 
 - state.json file grows quickly because of HTML files cache. The cache needs refactoring.
 - script uses a lot of memory because of in-memory unlimited HTML cache
-- the cacert bundle needs update mechanism. Maybe we should install it via composer
-- the scripts considers all non-html pages to be invalid
+- the cacert bundle needs update mechanism. We should replace it with https://github.com/composer/ca-bundle
+- the scripts considers all non-html pages to be invalid (PDF, images)
 - script cannot check for parked domains
