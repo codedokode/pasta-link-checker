@@ -1,10 +1,9 @@
 <?php 
 
-namespace Checker;
+namespace UrlChecker;
+
 use Doctrine\Common\Cache\FilesystemCache;
-use Fetcher;
 use GuzzleHttp\Client;
-use LinkChecker;
 use PhpExtended\RootCacert\CacertBundle;
 use Symfony\Component\Console\Descriptor\TextDescriptor;
 use Symfony\Component\Console\Exception\RuntimeException;
@@ -26,7 +25,6 @@ $clearCache = false;
 $startUrl = 'https://github.com/codedokode/pasta/blob/master/README.md';
 $urlTemplate = 'https://github.com/codedokode/pasta/blob/master/';
 $defaultCacertPath =  CacertBundle::getFilePath();
-// $certificatesFile = __DIR__ . '/cacert-march-2016.pem';
 $userAgent = "codedokode-link-checker-bot (+https://github.com/codedokode/pasta-link-checker)";
 
 $output = new ConsoleOutput(OutputInterface::VERBOSITY_DEBUG);
@@ -57,8 +55,8 @@ $inputDefinition = new InputDefinition([
 $input = new ArgvInput();
 
 try {
-$input->bind($inputDefinition);
-$input->validate();
+    $input->bind($inputDefinition);
+    $input->validate();
 } catch (RuntimeException $ex) {
     fprintf(STDERR, "Invalid usage: %s\n\n", $ex->getMessage());
     printHelp($inputDefinition, $output);
@@ -73,15 +71,6 @@ if ($input->getOption('help')) {
 $cacertPath = $input->getOption("cacert-path");
 $clearCache = $input->getOption("clear-cache");
 
-// foreach (array_slice($argv, 1) as $arg) {
-//     if ($arg == '--clear-cache') {
-//         $clearCache = true;
-//     } else {
-//         throw new \Exception("Invalid argument $arg");
-//     }
-// }
-
-
 $client = new Client([
     'headers' =>   [
         'User-Agent' => $userAgent
@@ -92,25 +81,20 @@ $client->setDefaultOption('verify', $cacertPath);
 $fileCache = new FilesystemCache($cacheDir);
 $fetcher = new Fetcher($client, $fileCache, $fileCache, $cacheLifetimeSeconds, $logger);
 
-$saveCounter = 0;
-// $fetcher->addAfterFetchHandler(function () use (&$saveCounter, $fetcher, $stateFile) {
-//     $saveCounter ++;
-//     if ($saveCounter % 5 == 1) {
-//         saveFetcherState($fetcher, $stateFile);
-//     }
-// });
-
 $linkChecker = new LinkChecker($fetcher, $logger);
 if ($clearCache) {
     $fileCache->deleteAll();
 }
 
-// if (!$ignoreState && canUseState($stateFile, $maxStateAge)) {
-//     loadFetcherState($fetcher, $stateFile);
-// }
+$urlQueue = new UrlQueue;
+$urlQueue->addIfNew($startUrl);
 
-$checkedUrls = [];
-followUrl($linkChecker, $startUrl, $urlTemplate, $checkedUrls);
+while ($urlQueue->getQueuedCount() > 0) {
+    $url = pickBestUrl($fetcher, $urlQueue);
+    $urlQueue->markChecked($url);
+
+    processUrl($linkChecker, $urlQueue, $logger, $url, $urlTemplate);
+}
 
 $failures = $fetcher->getFailedUrlList();
 if ($failures) {
@@ -132,57 +116,92 @@ function printHelp(InputDefinition $def, OutputInterface $output)
     $descriptor->describe($output, $def);
 
     $output->writeln("");
-    // echo $def->getSynopsis(false);
-    // echo "\n";
 }
 
-function followUrl($linkChecker, $url, $urlTemplate, &$checkedUrls)
+function processUrl(LinkChecker $linkChecker, UrlQueue $urlQueue, $logger, $url, $followUrlBase)
 {
-    global $logger;
-
-    if (isset($checkedUrls[$url])) {
+    list($mustSkip, $skipReason) = mustSkipUrl($url);
+    if ($mustSkip) {
+        $logger->info("Skip $url: $skipReason");
         return;
     }
 
-    // Ignore example domains
-    $host = parse_url($url, PHP_URL_HOST);
-    if (preg_match("/\.local$/ui", $host) || preg_match("/example\.\w+$/ui", $host)) {
-        $logger->info("Ignoring example domain link $url");
+    $shouldCollectLinks = shouldCollectLinks($url, $followUrlBase);
+    $hash = parse_url($url, PHP_URL_FRAGMENT);
+
+    $preloadBody = $shouldCollectLinks || !empty($hash);
+
+    $metadata = $linkChecker->checkUrl($url, $preloadBody);
+
+    if (!$metadata->isSuccessful()) {
+        $logger->error("- $url [{$metadata->getErrorReason()}]");
         return;
+    } else {
+        $logger->info("- $url [ok]");
     }
 
-    $checkedUrls[$url] = $url;
-    $collected = $linkChecker->collectLinks([$url]);
-    $collectedUrls = array_filter(array_keys($collected), function ($url) use ($urlTemplate) {
-        
-        $path = parse_url($url, PHP_URL_PATH);
+    if ($shouldCollectLinks) {
+        $newLinks = $linkChecker->collectUrlsFromPage($url);
 
-        // Check only md files
-        if (!preg_match("/\.md$/i", $path)) {
-            return false;
+        $unseen = 0;
+        foreach ($newLinks as $newLink) {
+            $isNew = $urlQueue->addIfNew($newLink);
+            $unseen += ($isNew ? 1 : 0);
         }
 
-        return startsWith($url, $urlTemplate);
-    });
-
-    foreach ($collectedUrls as $newUrl) {
-        followUrl($linkChecker, $newUrl, $urlTemplate, $checkedUrls);
+        $logger->info(sprintf("found %d links, %d are new", count($newLinks), $unseen));
     }
 }
 
-// function canUseState($stateFile, $maxAge)
-// {
-//     if (!file_exists($stateFile)) {
-//         return false;
-//     }
+function pickBestUrl(Fetcher $fetcher, UrlQueue $urlQueue)
+{
+    $queuedUrls = $urlQueue->getQueuedUrls();
+    $tries = 50; // Prevent using too much time
+    $bestTime = INF;
 
-//     $mtime = filemtime($stateFile);
-//     if (time() - $mtime > $maxAge) {
-//         return false;
-//     }
+    reset($queuedUrls);
+    $bestUrl = key($queuedUrls);
 
-//     return true;
-// }
+    foreach ($queuedUrls as $url => $dummy) {
+        $time = $fetcher->getExpectedFetchTime($url);
+        if ($time == 0) {
+            // No need to look further
+            return $url;
+        }
+
+        if ($time < $bestTime) {
+            $bestTime = $time;
+            $bestUrl = $url;
+        }
+
+        $tries--;
+
+        if ($tries <= 0) {
+            break;
+        }
+    }
+
+    return $bestUrl;
+}
+
+/**
+ * @return [bool $canSkip, string $reason]
+ */
+function mustSkipUrl($url)
+{
+    // Ignore example domains
+    $host = parse_url($url, PHP_URL_HOST);
+    if (preg_match("/\.local$/ui", $host) || preg_match("/example\.\w+$/ui", $host)) {        
+        return [true, "is an example domain"];
+    }
+
+    return [false, null];
+}
+
+function shouldCollectLinks($url, $followUrlBase)
+{
+    return startsWith($url, $followUrlBase);
+}
 
 function initExceptions()
 {
@@ -195,26 +214,6 @@ function initExceptions()
         }
     );
 }
-
-// function saveFetcherState($fetcher, $stateFile)
-// {
-//     $data = json_encode($fetcher->saveState(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-//     file_put_contents($stateFile, $data, LOCK_EX);
-// }
-
-// function loadFetcherState($fetcher, $stateFile)
-// {
-//     global $logger;
-
-//     $content = file_get_contents($stateFile);
-//     $data = json_decode($content, true);
-//     if (!$data) {
-//         throw new \Exception("Failed to decode JSON from $stateFile");
-//     }
-
-//     $logger->info("Loaded " . count($data['urlSuccess']). " saved urls");
-//     $fetcher->loadState($data);
-// }
 
 function startsWith($url, $urlStart)
 {

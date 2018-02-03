@@ -15,7 +15,6 @@ The response status and response body are cache in a state.json file, so the scr
 
 ## Known problems / TODO
 
-- the cacert bundle needs update mechanism. Maybe we should install it via composer
 - the scripts considers all non-html pages to be invalid
 - script cannot check for parked domains
 - check fragments (page.html#something)

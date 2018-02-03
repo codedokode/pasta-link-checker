@@ -1,5 +1,7 @@
 <?php 
 
+namespace UrlChecker;
+
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Psr\Log\LoggerInterface;
@@ -134,8 +136,8 @@ class Fetcher
     {
         $errorText = 'No error';
         
-        $domain = parse_url($url, PHP_URL_HOST);
-        $this->pause($domain);
+        // $domain = $this->getDomainForPause($url);
+        $this->pause($url);
 
         try {
             
@@ -191,16 +193,68 @@ class Fetcher
         $this->invalidUrls[$href] = $reason;
     }
 
-    protected function pause($domain)
+    public function getExpectedFetchTime($url)
     {
-        $lastFetch = $this->getLastFetch($domain);
-        $passed = microtime(true) - $lastFetch;
+        $url = $this->normalizeUrl($url);
 
+        // If URL is in cache, no time required
+        $bodyKey = $this->getKeyForResponseBody($url);
+        if ($this->responseCache->contains($bodyKey)) {
+            return 0;
+        }
+
+        return $this->getWaitTime($url);
+    }
+
+    /**
+     * Returns how much we must wait before trying to make 
+     * a request to a specified URL. 0 means we don't have to wait.
+     *
+     * @return float 
+     */
+    public function getWaitTime($url)
+    {
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        if ($scheme == 'file') {
+            return 0;
+        }
+
+        $domain = $this->getDomainForPause($url);
+        $lastFetch = $this->getLastFetch($domain);
+
+        $passed = microtime(true) - $lastFetch;
         if ($passed < $this->interval) {
             $mustSleep = $this->interval - $passed;
+            return $mustSleep;
+        }
+
+        return 0;
+    }
+
+    protected function getDomainForPause($url)
+    {
+        $domain = parse_url($url, PHP_URL_HOST);
+        return $domain;
+    }
+
+    protected function pause($url)
+    {
+        $mustSleep = $this->getWaitTime($url);
+        $domain = $this->getDomainForPause($url);
+
+        if ($mustSleep > 0) {
             $this->logger->debug("Sleeping $mustSleep sec (for $domain)");
             usleep(ceil($mustSleep * 1e6));
         }
+
+        // $lastFetch = $this->getLastFetch($domain);
+        // $passed = microtime(true) - $lastFetch;
+
+        // if ($passed < $this->interval) {
+        //     $mustSleep = $this->interval - $passed;
+        //     $this->logger->debug("Sleeping $mustSleep sec (for $domain)");
+        //     usleep(ceil($mustSleep * 1e6));
+        // }
 
         $this->lastFetchByDomain[$domain] = microtime(true);
     }

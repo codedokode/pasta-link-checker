@@ -1,5 +1,7 @@
 <?php 
 
+namespace UrlChecker;
+
 use Symfony\Component\DomCrawler\Crawler;
 use Symfony\Component\DomCrawler\Link;
 use Psr\Log\LoggerInterface;
@@ -17,43 +19,12 @@ class LinkChecker
     }
 
     /** @return ResponseMetadata */
-    public function checkUrl($url)
+    public function checkUrl($url, $preloadBody = true)
     {
         return $this->fetcher->check($url);
     }
     
-    /**
-     * @return array [  URL => [referenced-by, ...], ... ]
-     */
-    public function collectLinks(array $links)
-    {
-        $urlList = [];
-
-        foreach ($links as $link) {
-            $foundUrls = $this->visitLink($link);
-
-            $this->logger->info(sprintf("%s: %d links", $link, count($foundUrls)));
-
-            foreach ($foundUrls as $url) {
-                if (!isset($urlList[$url])) {
-                    $urlList[$url] = [];
-                }
-
-                $urlList[$url][] = $link;
-
-                $metadata = $this->checkUrl($url);
-                if ($metadata->isSuccessful()) {
-                    $this->logger->info("- $url [ok]");
-                } else {
-                    $this->logger->error("- $url [{$metadata->getErrorReason()}]");
-                }
-            }
-        }
-
-        return $urlList;
-    }
-    
-    protected function visitLink($pageUrl)
+    public function collectUrlsFromPage($pageUrl)
     {
         list($metadata, $html) = $this->fetcher->get($pageUrl);
 
@@ -123,6 +94,5 @@ class LinkChecker
 
         return true;
     }
-    
 }
 

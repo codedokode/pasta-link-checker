@@ -1,5 +1,7 @@
 <?php 
 
+namespace UrlChecker;
+
 /**
  * Represents URL check result. Must be serializable.
  */
