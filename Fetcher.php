@@ -4,143 +4,133 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Exception\RequestException;
 use Psr\Log\LoggerInterface;
 use GuzzleHttp\Url;
+use Doctrine\Common\Cache\Cache;
 
 class Fetcher
 {
+    /** @var Cache */
+    protected $responseCache;
+
+    /** @var Cache */
+    protected $metadataCache;
+
+    protected $cacheLifetimeSeconds;
+
     protected $client;
-    protected $urlSuccess = [];
-    protected $urlStatus = [];
-    protected $htmlCache = []; // URL -> html
 
     protected $lastFetchByDomain = [];
     protected $interval = 3;
 
-    protected $afterFetch = [];
+    // protected $afterFetch = [];
 
     protected $invalidUrls = [];
 
-    function __construct(Client $client, LoggerInterface $logger) 
+    // URL => metadata
+    protected $requests = [];
+
+    protected $logger;
+
+    /**
+     * @param Cache $responseCache Stores complete HTML response
+     * @param Cache $statusCache   Stores only response metadata (status, headers)
+     */
+    function __construct(
+        Client $client, 
+        Cache $responseCache, 
+        Cache $metadataCache, 
+        $cacheLifetimeSeconds, 
+        LoggerInterface $logger) 
     {
-        $this->client = $client;    
+        $this->client = $client;
+        $this->responseCache = $responseCache;
+        $this->metadataCache = $metadataCache;
+        $this->cacheLifetimeSeconds = $cacheLifetimeSeconds;
         $this->logger = $logger;
     }
 
-    public function reset()
+    private function getKeyForMetadata($url)
     {
-        $this->urlSuccess = [];
-        $this->urlStatus = [];
-    }
-
-    public function loadState(array $state)
-    {
-        assert(is_array($state));
-        assert(isset($state['urlSuccess']));
-        assert(isset($state['urlStatus']));
-        assert(isset($state['htmlCache']));
-
-        $statuses = $state['urlStatus'];
-        $cache = $state['htmlCache'];
-
-        foreach ($state['urlSuccess'] as $url => $success) {
-            assert(is_bool($success));
-            assert(isset($statuses[$url]));
-            assert(is_string($statuses[$url]));
-
-            // How can there be NULL here? 
-            // assert(array_key_exists($url, $cache));
-        }
-
-        $this->urlSuccess = $state['urlSuccess'];
-        $this->urlStatus = $state['urlStatus'];
-        $this->htmlCache = $state['htmlCache'];
+        return "meta::$url";
     }
     
-    public function saveState()
+    private function getKeyForResponseBody($url)
     {
-        return [
-            'urlSuccess' => $this->urlSuccess,
-            'urlStatus'  => $this->urlStatus,
-            'htmlCache'  => $this->htmlCache
-        ];
+        return "body::$url";
     }
-    
-    public function addAfterFetchHandler(callable $handler)
-    {
-        $this->afterFetch[] = $handler;
-    }
-    
-    protected function callAfterFetchHandler(array $args)
-    {
-        foreach ($this->afterFetch as $handler) {
-            call_user_func_array($handler, $args);
-        }
-    }
-    
-    public function check($url, &$errorText)
+
+    /**
+     * @return ResponseMetadata 
+     */
+    public function check($url)
     {
         $url = $this->normalizeUrl($url);
 
-        if (isset($this->urlSuccess[$url])) {
-            assert(isset($this->urlStatus[$url]));
+        $key = $this->getKeyForMetadata($url);
+        $cached = $this->metadataCache->fetch($key);
+        if (false !== $cached) {
+            assert($cached instanceof ResponseMetadata);
 
-            $errorText = $this->urlStatus[$url];
-            return $this->urlSuccess[$url];
+            $this->requests[$url] = $cached;
+            return $cached;
         }
 
-        return !!$this->getFromNet($url, $errorText);
+        // TODO: try HEAD first
+        list($metadata, $html) = $this->getFromNet($url);
+
+        $this->metadataCache->save($key, $metadata, $this->cacheLifetimeSeconds);
+        $this->requests[$url] = $cached;
+
+        return $metadata;
     }
     
-    public function get($url, &$errorText)
+    /**
+     * @return array [ResponseMetadata $metadata, string $html]
+     */
+    public function get($url /* , &$errorText */)
     {
         $url = $this->normalizeUrl($url);
+        $metaKey = $this->getKeyForMetadata($url);
+        $bodyKey = $this->getKeyForResponseBody($url);
+        $cachedMeta = $this->metadataCache->fetch($metaKey);
+        $cachedBody = $this->metadataCache->fetch($bodyKey);
 
-        if (isset($this->urlSuccess[$url])) {
+        if ($cachedMeta !== false && $cachedBody !== false) {
+            assert($cachedMeta instanceof ResponseMetadata);
+            $this->requests[$url] = $cachedMeta;
 
-            if (!$this->urlSuccess[$url]) {
-                assert(isset($this->urlStatus[$url]));
-
-                $errorText = $this->urlStatus[$url];
-                return false;
-            } else {
-                if (!empty($this->htmlCache[$url])) {
-                    assert(isset($this->htmlCache[$url]));
-                    $errorText = null;
-                    return $this->htmlCache[$url];
-                } else {
-                    $this->logger->error("URL $url not found in HTML cache, status is success though");
-                }
-            }
+            return [$cachedMeta, $cachedBody];
         }
 
-        $response = $this->getFromNet($url, $errorText);
-        return $response;
+        list($metadata, $html) = $this->getFromNet($url);
+        $this->metadataCache->save($metaKey, $metadata, $this->cacheLifetimeSeconds);
+        $this->metadataCache->save($bodyKey, $html, $this->cacheLifetimeSeconds);
+        $this->requests[$url] = $metadata;
+
+        return [$metadata, $html];
     }
 
-    private function getFromNet($url, &$errorText)
+    /**
+     * @return [ResponseMetadata $meta, string $html]
+     */
+    private function getFromNet($url /* , &$errorText */)
     {
-        $response = $this->fetchUrl($url, $errorText);
-        $this->urlSuccess[$url] = !!$response;
-        $this->urlStatus[$url] = $errorText;
+        list($response, $errorText) = $this->fetchUrlWithoutHandlers($url);
+        $metadata = new ResponseMetadata(!!$response, $errorText);
 
         if (!$response) {
-            return false;
+            return [$metadata, null];
         }
 
         $html = $response->getBody()->getContents();
-        $this->htmlCache[$url] = $html;
+        // $this->callAfterFetchHandler([$url, $html, $errorText]);
 
-        $this->callAfterFetchHandler([$url, $html, $errorText]);
-
-        return $html;
+        return [$metadata, $html];
     }
 
-    private function fetchUrl($url, &$errorText)
-    {
-        $result = $this->fetchUrlWithoutHandlers($url, $errorText);
-        return $result;
-    }
-    
-    private function fetchUrlWithoutHandlers($url, &$errorText)
+    /**
+     * @return [GuzzleResponse $resp = null, string $errorText = null]
+     */    
+    private function fetchUrlWithoutHandlers($url /* , &$errorText */)
     {
         $errorText = 'No error';
         
@@ -157,37 +147,37 @@ class Fetcher
         } catch (RequestException $e) {
             $this->logger->warning("GET $url failed: {$e->getMessage()}");
             $errorText = $e->getMessage();
-            return false;
+            return [null, $errorText];
         }
 
         // Response code
         if ($response->getStatusCode() != 200) {
             $errorText = "{$response->getStatusCode()} {$response->getReasonPhrase()}";
-            return false;
+            return [null, $errorText];
         }
 
         // Content type
         $type = $response->getHeader('Content-Type'); 
         if (!$type) {
             $errorText = "No Content-Type";
-            return false;
+            return [null, $errorText];
         }
 
         if (!preg_match("#^text/html#i", $type)) {
             $errorText = "Content-Type invalid: $type";
-            return false;
+            return [null, $errorText];
         }
 
-        return $response;
+        return [$response, null];
     }
 
     public function getFailedUrlList()
     {
         $result = [];
 
-        foreach ($this->urlSuccess as $url => $success) {
-            if (!$success) {
-                $result[$url] = $this->urlStatus[$url];
+        foreach ($this->requests as $url => $metadata) {
+            if (!$metadata->isSuccessful()) {
+                $result[$url] = $metadata->getErrorReason();
             }
         }
 
@@ -208,7 +198,7 @@ class Fetcher
 
         if ($passed < $this->interval) {
             $mustSleep = $this->interval - $passed;
-            $this->logger->debug("Sleeping $mustSleep sec");
+            $this->logger->debug("Sleeping $mustSleep sec (for $domain)");
             usleep(ceil($mustSleep * 1e6));
         }
 

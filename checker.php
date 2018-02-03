@@ -7,21 +7,24 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Fetcher;
 use LinkChecker;
 use GuzzleHttp\Client;
+use Doctrine\Common\Cache\FilesystemCache;
 
 require_once __DIR__ . '/vendor/autoload.php';
 initExceptions();
 
-$stateFile = __DIR__ . '/cache/state.json';
-$maxStateAge = 1800;
-$ignoreState = false;
+$cacheDir = __DIR__ . '/cache/';
+$cacheLifetimeSeconds = 900;
+
+// $maxStateAge = 1800;
+$clearCache = false;
 $startUrl = 'https://github.com/codedokode/pasta/blob/master/README.md';
 $urlTemplate = 'https://github.com/codedokode/pasta/blob/master/';
 $certificatesFile = __DIR__ . '/cacert-march-2016.pem';
 $userAgent = "codedokode-link-checker-bot (+https://github.com/codedokode/pasta-link-checker)";
 
 foreach (array_slice($argv, 1) as $arg) {
-    if ($arg == '--ignore-state') {
-        $ignoreState = true;
+    if ($arg == '--clear-cache') {
+        $clearCache = true;
     } else {
         throw new \Exception("Invalid argument $arg");
     }
@@ -36,21 +39,26 @@ $client = new Client([
     ]
 ]);
 $client->setDefaultOption('verify', $certificatesFile);
-$fetcher = new Fetcher($client, $logger);
+
+$fileCache = new FilesystemCache($cacheDir);
+$fetcher = new Fetcher($client, $fileCache, $fileCache, $cacheLifetimeSeconds, $logger);
 
 $saveCounter = 0;
-$fetcher->addAfterFetchHandler(function () use (&$saveCounter, $fetcher, $stateFile) {
-    $saveCounter ++;
-    if ($saveCounter % 5 == 1) {
-        saveFetcherState($fetcher, $stateFile);
-    }
-});
+// $fetcher->addAfterFetchHandler(function () use (&$saveCounter, $fetcher, $stateFile) {
+//     $saveCounter ++;
+//     if ($saveCounter % 5 == 1) {
+//         saveFetcherState($fetcher, $stateFile);
+//     }
+// });
 
 $linkChecker = new LinkChecker($fetcher, $logger);
-
-if (!$ignoreState && canUseState($stateFile, $maxStateAge)) {
-    loadFetcherState($fetcher, $stateFile);
+if ($clearCache) {
+    $fileCache->deleteAll();
 }
+
+// if (!$ignoreState && canUseState($stateFile, $maxStateAge)) {
+//     loadFetcherState($fetcher, $stateFile);
+// }
 
 $checkedUrls = [];
 followUrl($linkChecker, $startUrl, $urlTemplate, $checkedUrls);
@@ -128,25 +136,25 @@ function initExceptions()
     );
 }
 
-function saveFetcherState($fetcher, $stateFile)
-{
-    $data = json_encode($fetcher->saveState(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-    file_put_contents($stateFile, $data, LOCK_EX);
-}
+// function saveFetcherState($fetcher, $stateFile)
+// {
+//     $data = json_encode($fetcher->saveState(), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+//     file_put_contents($stateFile, $data, LOCK_EX);
+// }
 
-function loadFetcherState($fetcher, $stateFile)
-{
-    global $logger;
+// function loadFetcherState($fetcher, $stateFile)
+// {
+//     global $logger;
 
-    $content = file_get_contents($stateFile);
-    $data = json_decode($content, true);
-    if (!$data) {
-        throw new \Exception("Failed to decode JSON from $stateFile");
-    }
+//     $content = file_get_contents($stateFile);
+//     $data = json_decode($content, true);
+//     if (!$data) {
+//         throw new \Exception("Failed to decode JSON from $stateFile");
+//     }
 
-    $logger->info("Loaded " . count($data['urlSuccess']). " saved urls");
-    $fetcher->loadState($data);
-}
+//     $logger->info("Loaded " . count($data['urlSuccess']). " saved urls");
+//     $fetcher->loadState($data);
+// }
 
 function startsWith($url, $urlStart)
 {

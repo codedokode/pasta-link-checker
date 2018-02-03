@@ -16,9 +16,10 @@ class LinkChecker
         $this->logger = $logger;
     }
 
-    public function checkUrl($url, &$error)
+    /** @return ResponseMetadata */
+    public function checkUrl($url)
     {
-        return $this->fetcher->check($url, $error);
+        return $this->fetcher->check($url);
     }
     
     /**
@@ -40,11 +41,11 @@ class LinkChecker
 
                 $urlList[$url][] = $link;
 
-                $result = $this->checkUrl($url, $errorText);
-                if ($result) {
+                $metadata = $this->checkUrl($url);
+                if ($metadata->isSuccessful()) {
                     $this->logger->info("- $url [ok]");
                 } else {
-                    $this->logger->error("- $url [$errorText]");
+                    $this->logger->error("- $url [{$metadata->getErrorReason()}]");
                 }
             }
         }
@@ -54,14 +55,13 @@ class LinkChecker
     
     protected function visitLink($pageUrl)
     {
-        $response = $this->fetcher->get($pageUrl, $errorText);
+        list($metadata, $html) = $this->fetcher->get($pageUrl);
 
-        if (false === $response) {
-            $this->logger->error("Failed to fetch $pageUrl: $errorText");
+        if (!$metadata->isSuccessful()) {
+            $this->logger->error("Failed to fetch $pageUrl: {$metadata->getErrorReason()}");
             return [];
         }
 
-        $html = $response; // ->getBody()->getContents();
         $crawler = new Crawler($html);
         $content = $crawler->filter('#readme');
 
