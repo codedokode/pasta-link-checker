@@ -5,6 +5,7 @@
         "symfony/console": "*",
         "symfony/css-selector": ">=2.8",
         "doctrine/cache": "^1.5.0",
+        "php-extended/php-root-cacert-bundle": "^1",
         "psr/log": "*"
     },
     "autoload": {

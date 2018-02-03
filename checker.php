@@ -1,13 +1,20 @@
 <?php 
 
 namespace Checker;
-use Symfony\Component\Console\Output\ConsoleOutput;
-use Symfony\Component\Console\Logger\ConsoleLogger;
-use Symfony\Component\Console\Output\OutputInterface;
-use Fetcher;
-use LinkChecker;
-use GuzzleHttp\Client;
 use Doctrine\Common\Cache\FilesystemCache;
+use Fetcher;
+use GuzzleHttp\Client;
+use LinkChecker;
+use PhpExtended\RootCacert\CacertBundle;
+use Symfony\Component\Console\Descriptor\TextDescriptor;
+use Symfony\Component\Console\Exception\RuntimeException;
+use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Input\Input;
+use Symfony\Component\Console\Input\InputDefinition;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Logger\ConsoleLogger;
+use Symfony\Component\Console\Output\ConsoleOutput;
+use Symfony\Component\Console\Output\OutputInterface;
 
 require_once __DIR__ . '/vendor/autoload.php';
 initExceptions();
@@ -15,30 +22,72 @@ initExceptions();
 $cacheDir = __DIR__ . '/cache/';
 $cacheLifetimeSeconds = 900;
 
-// $maxStateAge = 1800;
 $clearCache = false;
 $startUrl = 'https://github.com/codedokode/pasta/blob/master/README.md';
 $urlTemplate = 'https://github.com/codedokode/pasta/blob/master/';
-$certificatesFile = __DIR__ . '/cacert-march-2016.pem';
+$defaultCacertPath =  CacertBundle::getFilePath();
+// $certificatesFile = __DIR__ . '/cacert-march-2016.pem';
 $userAgent = "codedokode-link-checker-bot (+https://github.com/codedokode/pasta-link-checker)";
-
-foreach (array_slice($argv, 1) as $arg) {
-    if ($arg == '--clear-cache') {
-        $clearCache = true;
-    } else {
-        throw new \Exception("Invalid argument $arg");
-    }
-}
-
 
 $output = new ConsoleOutput(OutputInterface::VERBOSITY_DEBUG);
 $logger = new ConsoleLogger($output);
+
+$inputDefinition = new InputDefinition([
+    new InputOption(
+        'clear-cache', 
+        null, 
+        InputOption::VALUE_NONE, 
+        'Clear cache before running the checker'
+    ),
+    new InputOption(
+        'cacert-path', 
+        null, 
+        InputOption::VALUE_REQUIRED, 
+        'Specify cacert path for validating certificates', 
+        $defaultCacertPath
+    ),
+    new InputOption(
+        'help', 
+        'h', 
+        InputOption::VALUE_NONE, 
+        'Print help message'
+    )
+]);
+
+$input = new ArgvInput();
+
+try {
+$input->bind($inputDefinition);
+$input->validate();
+} catch (RuntimeException $ex) {
+    fprintf(STDERR, "Invalid usage: %s\n\n", $ex->getMessage());
+    printHelp($inputDefinition, $output);
+    exit(1);
+}
+
+if ($input->getOption('help')) {
+    printHelp($inputDefinition, $output);
+    exit(0);
+}
+
+$cacertPath = $input->getOption("cacert-path");
+$clearCache = $input->getOption("clear-cache");
+
+// foreach (array_slice($argv, 1) as $arg) {
+//     if ($arg == '--clear-cache') {
+//         $clearCache = true;
+//     } else {
+//         throw new \Exception("Invalid argument $arg");
+//     }
+// }
+
+
 $client = new Client([
     'headers' =>   [
         'User-Agent' => $userAgent
     ]
 ]);
-$client->setDefaultOption('verify', $certificatesFile);
+$client->setDefaultOption('verify', $cacertPath);
 
 $fileCache = new FilesystemCache($cacheDir);
 $fetcher = new Fetcher($client, $fileCache, $fileCache, $cacheLifetimeSeconds, $logger);
@@ -74,7 +123,18 @@ if ($failures) {
 $code = count($failures) ? 1 : 0;
 exit($code);
 
+function printHelp(InputDefinition $def, OutputInterface $output)
+{
+    $output->writeln(sprintf("%s - checks URLS is documents", basename(__FILE__)));
+    $output->writeln("");
 
+    $descriptor = new TextDescriptor();
+    $descriptor->describe($output, $def);
+
+    $output->writeln("");
+    // echo $def->getSynopsis(false);
+    // echo "\n";
+}
 
 function followUrl($linkChecker, $url, $urlTemplate, &$checkedUrls)
 {
@@ -110,19 +170,19 @@ function followUrl($linkChecker, $url, $urlTemplate, &$checkedUrls)
     }
 }
 
-function canUseState($stateFile, $maxAge)
-{
-    if (!file_exists($stateFile)) {
-        return false;
-    }
+// function canUseState($stateFile, $maxAge)
+// {
+//     if (!file_exists($stateFile)) {
+//         return false;
+//     }
 
-    $mtime = filemtime($stateFile);
-    if (time() - $mtime > $maxAge) {
-        return false;
-    }
+//     $mtime = filemtime($stateFile);
+//     if (time() - $mtime > $maxAge) {
+//         return false;
+//     }
 
-    return true;
-}
+//     return true;
+// }
 
 function initExceptions()
 {

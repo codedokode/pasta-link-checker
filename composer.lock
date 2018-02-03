@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "content-hash": "885ec5c315675fb268e3277905a5fb35",
+    "content-hash": "3ade0935437c336cc0ec38e1853f798d",
     "packages": [
         {
             "name": "doctrine/cache",
@@ -229,6 +229,55 @@
                 "stream"
             ],
             "time": "2014-10-12 19:18:40"
+        },
+        {
+            "name": "php-extended/php-root-cacert-bundle",
+            "version": "1.0.54",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/php-extended/php-root-cacert-bundle.git",
+                "reference": "0a02d72f564574807d430a869d62cbc93d2478bb"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/php-extended/php-root-cacert-bundle/zipball/0a02d72f564574807d430a869d62cbc93d2478bb",
+                "reference": "0a02d72f564574807d430a869d62cbc93d2478bb",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=5.3.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "PhpExtended\\RootCacert\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Anastaszor",
+                    "homepage": "https://github.com/Anastaszor",
+                    "role": "Developer"
+                }
+            ],
+            "description": "A library to safely add the CA root certificates into your programmes ssl validations",
+            "homepage": "https://github.com/php-extended/php-root-cacert-bundle",
+            "keywords": [
+                "ca",
+                "certificate",
+                "certification authority",
+                "curl",
+                "php",
+                "root",
+                "ssl",
+                "tls",
+                "validation"
+            ],
+            "time": "2018-01-28 00:55:36"
         },
         {
             "name": "psr/log",
