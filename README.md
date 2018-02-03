@@ -15,7 +15,7 @@ The response status and response body are cache in a state.json file, so the scr
 
 ## Known problems / TODO
 
-[ ] script considers all non-html pages to be invalid
+[ ] script considers all non-html pages to be invalid (PDF, images)
 [ ] script cannot detect parked domains
 [ ] check fragments (page.html#something)
 [x] use HEAD requests for leaf pages where possible
@@ -26,3 +26,5 @@ The response status and response body are cache in a state.json file, so the scr
 [x] find and report redirects
 [ ] maybe use delay based on last 2 domain parts, not whole domain
 [ ] maybe obey robots.txt? 
+[ ] links like https://mega.nz/#!12345 , https://rghost.net/12345 are not checked properly
+
