@@ -21,7 +21,7 @@ class LinkChecker
     /** @return ResponseMetadata */
     public function checkUrl($url, $preloadBody = true)
     {
-        return $this->fetcher->check($url);
+        return $this->fetcher->check($url, $preloadBody);
     }
     
     public function collectUrlsFromPage($pageUrl)

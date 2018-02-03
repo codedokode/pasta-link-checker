@@ -63,7 +63,7 @@ class Fetcher
     /**
      * @return ResponseMetadata 
      */
-    public function check($url)
+    public function check($url, $preloadBody = true)
     {
         $url = $this->normalizeUrl($url);
 
@@ -76,8 +76,17 @@ class Fetcher
             return $cached;
         }
 
-        // TODO: try HEAD first
-        list($metadata, $html) = $this->getFromNet($url);
+        // try HEAD first
+        $shouldMakeGet = true;
+
+        if (!$preloadBody) {
+            list($metadata, $cannotUseHead) = $this->makeHeadRequest($url);
+            $shouldMakeGet = $cannotUseHead;
+        }
+
+        if ($shouldMakeGet) {
+            list($metadata, $html) = $this->getFromNet($url);
+        }
 
         $this->metadataCache->save($key, $metadata, $this->cacheLifetimeSeconds);
         $this->requests[$url] = $cached;
@@ -116,8 +125,8 @@ class Fetcher
      */
     private function getFromNet($url /* , &$errorText */)
     {
-        list($response, $errorText) = $this->fetchUrlWithoutHandlers($url);
-        $metadata = new ResponseMetadata(!!$response, $errorText);
+        list($response, $errorText) = $this->fetchUrl($url, false);
+        $metadata = new ResponseMetadata(!$errorText, $errorText);
 
         if (!$response) {
             return [$metadata, null];
@@ -130,9 +139,21 @@ class Fetcher
     }
 
     /**
+     * @return [ResponseMetadata $meta, bool $cannotUseHead]
+     */
+    private function makeHeadRequest($url)
+    {
+        list($response, $errorText) = $this->fetchUrl($url, true);
+        $cannotUseHead = $response && $response->getStatusCode() == 405;
+
+        $metadata = new ResponseMetadata(!$errorText, $errorText);
+        return [$metadata, $cannotUseHead];
+    }
+
+    /**
      * @return [GuzzleResponse $resp = null, string $errorText = null]
      */    
-    private function fetchUrlWithoutHandlers($url /* , &$errorText */)
+    private function fetchUrl($url, $useHead)
     {
         $errorText = 'No error';
         
@@ -141,13 +162,21 @@ class Fetcher
 
         try {
             
-            $this->logger->info("GET $url");
-            $response = $this->client->get($url, [
-                'exceptions' => false
-            ]);
+            if ($useHead) {
+                $this->logger->info("HEAD $url");
+                $response = $this->client->head($url, [
+                    'exceptions' => false
+                ]);
+            } else {
+                $this->logger->info("GET $url");
+                $response = $this->client->get($url, [
+                    'exceptions' => false
+                ]);
+            }
 
         } catch (RequestException $e) {
-            $this->logger->warning("GET $url failed: {$e->getMessage()}");
+            $method = $useHead ? 'HEAD' : 'GET';
+            $this->logger->warning("$method $url failed: {$e->getMessage()}");
             $errorText = $e->getMessage();
             return [null, $errorText];
         }
@@ -155,19 +184,19 @@ class Fetcher
         // Response code
         if ($response->getStatusCode() != 200) {
             $errorText = "{$response->getStatusCode()} {$response->getReasonPhrase()}";
-            return [null, $errorText];
+            return [$response, $errorText];
         }
 
         // Content type
         $type = $response->getHeader('Content-Type'); 
         if (!$type) {
             $errorText = "No Content-Type";
-            return [null, $errorText];
+            return [$response, $errorText];
         }
 
         if (!preg_match("#^text/html#i", $type)) {
             $errorText = "Content-Type invalid: $type";
-            return [null, $errorText];
+            return [$response, $errorText];
         }
 
         return [$response, null];
