@@ -4,6 +4,7 @@ namespace UrlChecker;
 
 use Doctrine\Common\Cache\FilesystemCache;
 use GuzzleHttp\Client;
+use GuzzleHttp\Url;
 use PhpExtended\RootCacert\CacertBundle;
 use Symfony\Component\Console\Descriptor\TextDescriptor;
 use Symfony\Component\Console\Exception\RuntimeException;
@@ -22,8 +23,8 @@ $cacheDir = __DIR__ . '/cache/';
 $cacheLifetimeSeconds = 900;
 
 $clearCache = false;
-$startUrl = 'https://github.com/codedokode/pasta/blob/master/README.md';
-$urlTemplate = 'https://github.com/codedokode/pasta/blob/master/';
+$defaultStartUrl = 'https://github.com/codedokode/pasta/blob/master/README.md';
+// $urlTemplate = 'https://github.com/codedokode/pasta/blob/master/';
 $defaultCacertPath =  CacertBundle::getFilePath();
 $userAgent = "codedokode-link-checker-bot (+https://github.com/codedokode/pasta-link-checker)";
 
@@ -31,6 +32,20 @@ $output = new ConsoleOutput(OutputInterface::VERBOSITY_DEBUG);
 $logger = new ConsoleLogger($output);
 
 $inputDefinition = new InputDefinition([
+    new InputOption(
+        'url',
+        'u',
+        InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
+        'Starting URLs',
+        [$defaultStartUrl]
+    ),
+    new InputOption(
+        'follow',
+        'f',
+        InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
+        'Follow links inside this area, if not given the equals the URLS',
+        []
+    ),
     new InputOption(
         'clear-cache', 
         null, 
@@ -70,6 +85,20 @@ if ($input->getOption('help')) {
 
 $cacertPath = $input->getOption("cacert-path");
 $clearCache = $input->getOption("clear-cache");
+$startUrls = $input->getOption('url');
+$followUrls = $input->getOption('follow');
+
+if (!$followUrls) {
+    $followUrls = deduceFollowUrls($startUrls);
+}
+
+foreach ($followUrls as $followUrl) {
+    $logger->debug("- Recurse into area: $followUrl");
+}
+
+if (!$startUrls) {
+    throw new \Exception("Need at least one start URL");
+}
 
 $client = new Client([
     'headers' =>   [
@@ -87,13 +116,15 @@ if ($clearCache) {
 }
 
 $urlQueue = new UrlQueue;
-$urlQueue->addIfNew($startUrl);
+foreach ($startUrls as $startUrl) {
+    $urlQueue->addIfNew($startUrl);    
+}
 
 while ($urlQueue->getQueuedCount() > 0) {
     $url = pickBestUrl($fetcher, $urlQueue);
     $urlQueue->markChecked($url);
 
-    processUrl($linkChecker, $urlQueue, $logger, $url, $urlTemplate);
+    processUrl($linkChecker, $urlQueue, $logger, $url, $followUrls);
 }
 
 $failures = $fetcher->getFailedUrlList();
@@ -118,7 +149,7 @@ function printHelp(InputDefinition $def, OutputInterface $output)
     $output->writeln("");
 }
 
-function processUrl(LinkChecker $linkChecker, UrlQueue $urlQueue, $logger, $url, $followUrlBase)
+function processUrl(LinkChecker $linkChecker, UrlQueue $urlQueue, $logger, $url, array $followUrlsInside)
 {
     list($mustSkip, $skipReason) = mustSkipUrl($url);
     if ($mustSkip) {
@@ -126,7 +157,7 @@ function processUrl(LinkChecker $linkChecker, UrlQueue $urlQueue, $logger, $url,
         return;
     }
 
-    $shouldCollectLinks = shouldCollectLinks($url, $followUrlBase);
+    $shouldCollectLinks = shouldCollectLinks($url, $followUrlsInside);
     $hash = parse_url($url, PHP_URL_FRAGMENT);
 
     $preloadBody = $shouldCollectLinks || !empty($hash);
@@ -198,9 +229,45 @@ function mustSkipUrl($url)
     return [false, null];
 }
 
-function shouldCollectLinks($url, $followUrlBase)
+function shouldCollectLinks($url, array $followUrlsBase)
 {
-    return startsWith($url, $followUrlBase);
+    foreach ($followUrlsBase as $base) {
+        if (startsWith($url, $base)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function deduceFollowUrls(array $startUrls)
+{
+    $followUrls = [];
+
+    foreach ($startUrls as $url) {
+        $followUrls[] = deduceFollowUrlFromStartUrl($url);
+    }
+
+    return $followUrls;
+}
+
+/**
+ * http://example.com/some/domain.txt -> http://example.com/some/
+ */
+function deduceFollowUrlFromStartUrl($url)
+{
+    $urlObject = Url::fromString($url);
+    $urlObject->setFragment(null);
+    $urlObject->setQuery([]);
+
+    $path = $urlObject->getPath();
+    if (mb_strlen($path) > 1) {
+        // Remove last segment
+        $path = preg_replace('~\/[^/]+$~', '/', $path);
+        $urlObject->setPath($path);
+    }
+
+    return $urlObject->__toString();
 }
 
 function initExceptions()

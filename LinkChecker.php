@@ -34,7 +34,8 @@ class LinkChecker
         }
 
         $crawler = new Crawler($html);
-        $content = $crawler->filter('#readme');
+        $content = $this->filterPageDom($crawler, $pageUrl);
+        // $content = $crawler->filter('#readme');
 
         if (!$content->count()) {
             throw new \Exception("Page at $pageUrl has no content block");
@@ -69,6 +70,24 @@ class LinkChecker
 
         $links = array_unique($links);
         return $links;
+    }
+
+    /**
+     * Removes unnecessary parts from DOM
+     *
+     * @return Crawler
+     */
+    private function filterPageDom(Crawler $crawler, $url)
+    {
+        $host = parse_url($url, PHP_URL_HOST);
+        $path = parse_url($url, PHP_URL_PATH);
+
+        // For .md pages on Github, use only content part
+        if ($host == 'github.com' && preg_match('~\.md$~', $path)) {
+            return $crawler->filter('#readme');
+        }
+
+        return $crawler;
     }
 
     private function resolveUrl($base, $relative)

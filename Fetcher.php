@@ -89,7 +89,7 @@ class Fetcher
         }
 
         $this->metadataCache->save($key, $metadata, $this->cacheLifetimeSeconds);
-        $this->requests[$url] = $cached;
+        $this->requests[$url] = $metadata;
 
         return $metadata;
     }
