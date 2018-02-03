@@ -43,7 +43,7 @@ $inputDefinition = new InputDefinition([
         'follow',
         'f',
         InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
-        'Follow links inside this area, if not given the equals the URLS',
+        'Follow links inside this area, if not given then deduced from URLs',
         []
     ),
     new InputOption(
@@ -162,7 +162,7 @@ exit($code);
 
 function printHelp(InputDefinition $def, OutputInterface $output)
 {
-    $output->writeln(sprintf("%s - checks URLS is documents", basename(__FILE__)));
+    $output->writeln(sprintf("%s - checks URLs is documents", basename(__FILE__)));
     $output->writeln("");
 
     $descriptor = new TextDescriptor();

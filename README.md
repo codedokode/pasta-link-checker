@@ -2,16 +2,24 @@
 
 Finds broken links in .md files in a github repository.
 
-Checks all links from a given github page (only from .md pages). Currently starting github URL is hardcoded as https://github.com/codedokode/pasta/blob/master/README.md
+Checks all links found on the site or in .md files from a github repository. Default starting URL is hardcoded as https://github.com/codedokode/pasta/blob/master/README.md , but it can be changed using CLI arguments.
 
-The scripts visits all .md files in a repository, finds all links within them and checks response status for those links. The list of broken links is printed to console.
+The scripts visits all pages on the site, finds all links within them and checks response status for those links. The list of broken links is printed to console.
 
-The response status and response body are cache in a state.json file, so the script will not redownload hundreds of pages when restarted.
+URL checker makes pauses between requests. It also uses filesystem cache.
 
 ## Installation
 
 - git clone
 - composer install
+
+## Usage
+
+```sh
+php checker.php -u http://example.com/
+```
+
+Type `php checker.php --help` for help.
 
 ## Known problems / TODO
 
