@@ -15,16 +15,16 @@ The response status and response body are cache in a state.json file, so the scr
 
 ## Known problems / TODO
 
-[ ] script considers all non-html pages to be invalid (PDF, images)
-[ ] script cannot detect parked domains
-[ ] check fragments (page.html#something)
-[x] use HEAD requests for leaf pages where possible
-[ ] don't cache and don't even load huge files
-[ ] be able to check local HTML files
-[ ] check image/css/js references
-[x] pick URLs from queue so that we don't have to wait
-[x] find and report redirects
-[ ] maybe use delay based on last 2 domain parts, not whole domain
-[ ] maybe obey robots.txt? 
-[ ] links like https://mega.nz/#!12345 , https://rghost.net/12345 are not checked properly
+- [ ] script considers all non-html pages to be invalid (PDF, images)
+- [ ] script cannot detect parked domains
+- [ ] check fragments (page.html#something)
+- [x] use HEAD requests for leaf pages where possible
+- [ ] don't cache and don't even load huge files
+- [ ] be able to check local HTML files
+- [ ] check image/css/js references
+- [x] pick URLs from queue so that we don't have to wait
+- [x] find and report redirects
+- [ ] maybe use delay based on last 2 domain parts, not whole domain
+- [ ] maybe obey robots.txt? 
+- [ ] links like https://mega.nz/#!12345 , https://rghost.net/12345 are not checked properly
 
