@@ -28,7 +28,7 @@ class Fetcher
     protected $invalidUrls = [];
 
     // URL => metadata
-    protected $requests = [];
+    // protected $requests = [];
 
     protected $logger;
 
@@ -72,7 +72,7 @@ class Fetcher
         if (false !== $cached) {
             assert($cached instanceof ResponseMetadata);
 
-            $this->requests[$url] = $cached;
+            // $this->requests[$url] = $cached;
             return $cached;
         }
 
@@ -89,7 +89,7 @@ class Fetcher
         }
 
         $this->metadataCache->save($key, $metadata, $this->cacheLifetimeSeconds);
-        $this->requests[$url] = $metadata;
+        // $this->requests[$url] = $metadata;
 
         return $metadata;
     }
@@ -107,7 +107,7 @@ class Fetcher
 
         if ($cachedMeta !== false && $cachedBody !== false) {
             assert($cachedMeta instanceof ResponseMetadata);
-            $this->requests[$url] = $cachedMeta;
+            // $this->requests[$url] = $cachedMeta;
 
             return [$cachedMeta, $cachedBody];
         }
@@ -115,7 +115,7 @@ class Fetcher
         list($metadata, $html) = $this->getFromNet($url);
         $this->metadataCache->save($metaKey, $metadata, $this->cacheLifetimeSeconds);
         $this->metadataCache->save($bodyKey, $html, $this->cacheLifetimeSeconds);
-        $this->requests[$url] = $metadata;
+        // $this->requests[$url] = $metadata;
 
         return [$metadata, $html];
     }
@@ -126,7 +126,7 @@ class Fetcher
     private function getFromNet($url /* , &$errorText */)
     {
         list($response, $errorText) = $this->fetchUrl($url, false);
-        $metadata = new ResponseMetadata(!$errorText, $errorText);
+        $metadata = $this->parseResponse($response, $errorText, $url);
 
         if (!$response) {
             return [$metadata, null];
@@ -138,6 +138,29 @@ class Fetcher
         return [$metadata, $html];
     }
 
+    private function parseResponse($response = null, $errorText, $pageUrl)
+    {
+        if ($response && 
+            $response->getStatusCode() >= 300 && 
+            $response->getStatusCode() < 400 && 
+            $response->hasHeader('Location')
+        ) {
+            $relLocation = $response->getHeader('Location');
+            $location = $this->resolveUrl($pageUrl, $relLocation);
+
+            $metadata = ResponseMetadata::createWithRedirect(
+                $location,
+                $response->getStatusCode()
+            );
+        } elseif ($errorText) {
+            $metadata = ResponseMetadata::createWithError($errorText);
+        } else {
+            $metadata = ResponseMetadata::createWithSuccess();
+        }
+
+        return $metadata;
+    }
+
     /**
      * @return [ResponseMetadata $meta, bool $cannotUseHead]
      */
@@ -145,8 +168,9 @@ class Fetcher
     {
         list($response, $errorText) = $this->fetchUrl($url, true);
         $cannotUseHead = $response && $response->getStatusCode() == 405;
+        $metadata = $this->parseResponse($response, $errorText, $url);
 
-        $metadata = new ResponseMetadata(!$errorText, $errorText);
+        // $metadata = new ResponseMetadata(!$errorText, $errorText);
         return [$metadata, $cannotUseHead];
     }
 
@@ -165,12 +189,14 @@ class Fetcher
             if ($useHead) {
                 $this->logger->info("HEAD $url");
                 $response = $this->client->head($url, [
-                    'exceptions' => false
+                    'exceptions'        => false,
+                    'allow_redirects'   =>  false
                 ]);
             } else {
                 $this->logger->info("GET $url");
                 $response = $this->client->get($url, [
-                    'exceptions' => false
+                    'exceptions'        =>  false,
+                    'allow_redirects'   =>  false
                 ]);
             }
 
@@ -202,24 +228,35 @@ class Fetcher
         return [$response, null];
     }
 
-    public function getFailedUrlList()
+    // public function getFailedUrlList()
+    // {
+    //     $result = [];
+
+    //     foreach ($this->requests as $url => $metadata) {
+    //         if (!$metadata->isSuccessful()) {
+    //             $result[$url] = $metadata->getErrorReason();
+    //         }
+    //     }
+
+    //     $result = $result + $this->invalidUrls;
+
+    //     return $result;
+    // }
+
+    public function getInvalidUrls()
     {
-        $result = [];
-
-        foreach ($this->requests as $url => $metadata) {
-            if (!$metadata->isSuccessful()) {
-                $result[$url] = $metadata->getErrorReason();
-            }
-        }
-
-        $result = $result + $this->invalidUrls;
-
-        return $result;
+        return $this->invalidUrls;
     }
 
-    public function addInvalidUrl($href, $reason, $usedBy = [])
+    public function addInvalidUrl($href, $reason, Hyperlink $referer = null)
     {
-        $this->invalidUrls[$href] = $reason;
+        $link = Hyperlink::createNormalLink($href, $referer);
+        $metadata = ResponseMetadata::createWithError($reason);
+
+        $this->invalidUrls[] = [
+            'link'      =>  $link,
+            'metadata'  =>  $metadata
+        ];
     }
 
     public function getExpectedFetchTime($url)
@@ -306,5 +343,15 @@ class Fetcher
         $result = $urlObject->__toString();
         return $result;
 
-    }       
+    }
+
+    public function resolveUrl($base, $relative)
+    {
+        $baseUrl = Url::fromString($base);
+        $relativeUrl = Url::fromString($relative);
+
+        $resultUrl = $baseUrl->combine($relativeUrl);
+
+        return $resultUrl->__toString();
+    }    
 }

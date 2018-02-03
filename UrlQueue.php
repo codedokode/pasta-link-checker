@@ -4,22 +4,24 @@ namespace UrlChecker;
 
 class UrlQueue
 {
-    // URL => true
+    // URL => Hyperlink
     protected $queuedUrls = [];
 
-    // URL => true
+    // URL => Hyperlink
     protected $checkedUrls = [];
 
     /**
      * @return bool true if URL was added to queue
      */
-    public function addIfNew($url)
+    public function addIfNew(Hyperlink $link)
     {
+        $url = $link->getUrl();
+
         if (!$this->isNew($url)) {
             return false;
         }
 
-        $this->queuedUrls[$url] = true;
+        $this->queuedUrls[$url] = $link;
         return true;
     }
     
@@ -64,7 +66,7 @@ class UrlQueue
      * Picks URL and marks it as checked. Throws an exception if 
      * queue is empty.
      *
-     * @return string 
+     * @return Hyperlink 
      */
     public function pick()
     {
@@ -73,20 +75,24 @@ class UrlQueue
         }
 
         reset($this->queuedUrls);
-        $url = key($this->queuedUrls);
+        $link = reset($this->queuedUrls);
+        $key = key($this->queuedUrls);
+        $url = $link->getUrl();
 
-        unset($this->queuedUrls);
+        unset($this->queuedUrls[$key]);
 
         assert(!array_key_exists($url, $this->checkedUrls));
-        $this->checkedUrls[$url] = true;
-        return $url;
+        $this->checkedUrls[$url] = $link;
+        return $link;
     }
     
-    public function markChecked($url)
+    public function markChecked(Hyperlink $link)
     {
+        $url = $link->getUrl();
+
         assert(array_key_exists($url, $this->queuedUrls));
         assert(!array_key_exists($url, $this->checkedUrls));
         unset($this->queuedUrls[$url]);
-        $this->checkedUrls[$url] = true;
+        $this->checkedUrls[$url] = $link;
     }
 }

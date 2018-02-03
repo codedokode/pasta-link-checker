@@ -7,12 +7,15 @@ namespace UrlChecker;
  */
 class ResponseMetadata
 {
-    /** 0 if failed to resolve the hostname or to connect */
-    // protected $httpCode = 0;
-
     protected $checkSuccess = false;
 
     protected $errorText = null;
+
+    protected $redirected = false;
+
+    protected $location = null;
+
+    protected $redirectCode;
 
     public function __construct($checkSuccess, /* , $httpCode, */ $errorText = null)
     {
@@ -25,12 +28,47 @@ class ResponseMetadata
         // $this->httpCode = $httpCode;
         $this->errorText = $errorText;
     }
+
+    public static function createWithError($errorText)
+    {
+        return new self(false, $errorText);
+    }
     
+    public static function createWithRedirect($location, $httpCode)
+    {
+        $self = new self(false, "Redirected to $location");
+        $self->redirected = true;
+        $self->location = $location;
+        $self->redirectCode = $httpCode;
+
+        return $self;
+    }
+
+    public static function createWithSuccess()
+    {
+        return new self(true);
+    }
+
     public function isSuccessful()
     {
         return $this->checkSuccess;
     }
+
+    public function isRedirected()
+    {
+        return $this->redirected;
+    }
     
+    public function getRedirectLocation()
+    {
+        return $this->location;
+    }
+
+    public function getRedirectCode()
+    {
+        return $this->redirectCode;
+    }
+
     public function getErrorReason()
     {
         if (!$this->checkSuccess) {

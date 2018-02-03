@@ -24,8 +24,9 @@ class LinkChecker
         return $this->fetcher->check($url, $preloadBody);
     }
     
-    public function collectUrlsFromPage($pageUrl)
+    public function collectUrlsFromPage(Hyperlink $link)
     {
+        $pageUrl = $link->getUrl();
         list($metadata, $html) = $this->fetcher->get($pageUrl);
 
         if (!$metadata->isSuccessful()) {
@@ -38,20 +39,21 @@ class LinkChecker
         // $content = $crawler->filter('#readme');
 
         if (!$content->count()) {
-            throw new \Exception("Page at $pageUrl has no content block");
+            $this->logger->error("Page at $pageUrl has no content block");
+            return [];
         }
 
-        $links = $content->filter('a[href]')->reduce(function ($node) use ($pageUrl) {
+        $links = $content->filter('a[href]')->reduce(function ($node) use ($link) {
 
             // Remove local and empty links
             $href = $node->attr('href');
 
-            if (preg_match("/^#/u", $href) || mb_strlen($href) == 0) {
+            if (preg_match("/^#/u", $href) || $href == '#' || mb_strlen($href) == 0) {
                 return false;
             };
 
             if (!$this->isValidUrl($href, $reason)) {
-                $this->fetcher->addInvalidUrl($href, $reason, $pageUrl);
+                $this->fetcher->addInvalidUrl($href, $reason, $link);
                 $this->logger->error("Invalid href: $href, reason: $reason");
                 return false;
             }
@@ -65,7 +67,7 @@ class LinkChecker
             return true;
 
         })->each(function ($node) use ($pageUrl) {            
-            return $this->resolveUrl($pageUrl, $node->attr('href'));
+            return $this->fetcher->resolveUrl($pageUrl, $node->attr('href'));
         });
 
         $links = array_unique($links);
@@ -83,23 +85,13 @@ class LinkChecker
         $path = parse_url($url, PHP_URL_PATH);
 
         // For .md pages on Github, use only content part
-        if ($host == 'github.com' && preg_match('~\.md$~', $path)) {
+        if ($host == 'github.com' && preg_match('~blob~', $path)) {
             return $crawler->filter('#readme');
         }
 
         return $crawler;
     }
 
-    private function resolveUrl($base, $relative)
-    {
-        $baseUrl = Url::fromString($base);
-        $relativeUrl = Url::fromString($relative);
-
-        $resultUrl = $baseUrl->combine($relativeUrl);
-
-        return $resultUrl->__toString();
-    }
-    
     private function isValidUrl($url, &$reason)
     {
         $reason = null;

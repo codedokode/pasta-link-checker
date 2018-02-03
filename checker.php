@@ -20,7 +20,7 @@ require_once __DIR__ . '/vendor/autoload.php';
 initExceptions();
 
 $cacheDir = __DIR__ . '/cache/';
-$cacheLifetimeSeconds = 900;
+$cacheLifetimeSeconds = 1800;
 
 $clearCache = false;
 $defaultStartUrl = 'https://github.com/codedokode/pasta/blob/master/README.md';
@@ -117,21 +117,43 @@ if ($clearCache) {
 
 $urlQueue = new UrlQueue;
 foreach ($startUrls as $startUrl) {
-    $urlQueue->addIfNew($startUrl);    
+    $link = Hyperlink::createStartUrl($startUrl);
+    $urlQueue->addIfNew($link);
 }
+
+$problems = [];
 
 while ($urlQueue->getQueuedCount() > 0) {
-    $url = pickBestUrl($fetcher, $urlQueue);
-    $urlQueue->markChecked($url);
+    $link = pickBestUrl($fetcher, $urlQueue);
+    $urlQueue->markChecked($link);
 
-    processUrl($linkChecker, $urlQueue, $logger, $url, $followUrls);
+    processUrl($linkChecker, $urlQueue, $logger, $link, $followUrls, $problems);
 }
 
-$failures = $fetcher->getFailedUrlList();
-if ($failures) {
+$failures = array_merge($problems, $fetcher->getInvalidUrls());
+$redirects = array_filter($failures, function ($info) {
+    return $info['metadata']->isRedirected();
+});
+
+$errors = array_filter($failures, function ($info) {
+    return !$info['metadata']->isRedirected();
+});
+
+if ($redirects) {
+    echo "\nRedirected URLs: \n";
+    foreach ($redirects as $info) {
+        printf("%s -> %s, found at %s\n", 
+            $info['link']->getUrl(), 
+            $info['metadata']->getRedirectLocation(),
+            $info['link']->getRefererUrl()
+        );
+    }
+}
+
+if ($redirects) {
     echo "\nFailed URLs: \n";
-    foreach ($failures as $url => $reason) {
-        echo "$url: $reason\n";
+    foreach ($errors as $info) {
+        printf("%s [%s]\n", $info['link']->getUrl(), $info['metadata']->getErrorReason());
     }
 }
 
@@ -149,11 +171,24 @@ function printHelp(InputDefinition $def, OutputInterface $output)
     $output->writeln("");
 }
 
-function processUrl(LinkChecker $linkChecker, UrlQueue $urlQueue, $logger, $url, array $followUrlsInside)
-{
+function processUrl(
+    LinkChecker $linkChecker, 
+    UrlQueue $urlQueue, 
+    $logger, 
+    Hyperlink $link, 
+    array $followUrlsInside,
+    array &$problems
+) {
+    $url = $link->getUrl();
+
     list($mustSkip, $skipReason) = mustSkipUrl($url);
     if ($mustSkip) {
         $logger->info("Skip $url: $skipReason");
+        return;
+    }
+
+    if ($link->getRedirectCount() > 5) {
+        $logger->error("Too many redirects at {$url}, skip");
         return;
     }
 
@@ -165,6 +200,20 @@ function processUrl(LinkChecker $linkChecker, UrlQueue $urlQueue, $logger, $url,
     $metadata = $linkChecker->checkUrl($url, $preloadBody);
 
     if (!$metadata->isSuccessful()) {
+        $problems[] = [
+            'link'      =>  $link,
+            'metadata'  =>  $metadata
+        ];
+    }
+
+    if ($metadata->isRedirected()) {
+        $logger->info("- $url -> {$metadata->getRedirectLocation()} [{$metadata->getRedirectCode()}]");
+        $newLink = Hyperlink::createRedirect($metadata->getRedirectLocation(), $link);
+        $urlQueue->addIfNew($newLink);
+        return;
+    }
+
+    if (!$metadata->isSuccessful()) {
         $logger->error("- $url [{$metadata->getErrorReason()}]");
         return;
     } else {
@@ -172,15 +221,16 @@ function processUrl(LinkChecker $linkChecker, UrlQueue $urlQueue, $logger, $url,
     }
 
     if ($shouldCollectLinks) {
-        $newLinks = $linkChecker->collectUrlsFromPage($url);
+        $newUrls = $linkChecker->collectUrlsFromPage($link);
 
         $unseen = 0;
-        foreach ($newLinks as $newLink) {
+        foreach ($newUrls as $newUrl) {
+            $newLink = Hyperlink::createNormalLink($newUrl, $link);
             $isNew = $urlQueue->addIfNew($newLink);
             $unseen += ($isNew ? 1 : 0);
         }
 
-        $logger->info(sprintf("found %d links, %d are new", count($newLinks), $unseen));
+        $logger->info(sprintf("found %d links, %d are new", count($newUrls), $unseen));
     }
 }
 
@@ -190,19 +240,20 @@ function pickBestUrl(Fetcher $fetcher, UrlQueue $urlQueue)
     $tries = 50; // Prevent using too much time
     $bestTime = INF;
 
-    reset($queuedUrls);
-    $bestUrl = key($queuedUrls);
+    $bestLink = reset($queuedUrls);
+    // $bestLink = key($queuedUrls);
 
-    foreach ($queuedUrls as $url => $dummy) {
+    foreach ($queuedUrls as $link) {
+        $url = $link->getUrl();
         $time = $fetcher->getExpectedFetchTime($url);
         if ($time == 0) {
             // No need to look further
-            return $url;
+            return $link;
         }
 
         if ($time < $bestTime) {
             $bestTime = $time;
-            $bestUrl = $url;
+            $bestLink = $link;
         }
 
         $tries--;
@@ -212,7 +263,7 @@ function pickBestUrl(Fetcher $fetcher, UrlQueue $urlQueue)
         }
     }
 
-    return $bestUrl;
+    return $bestLink;
 }
 
 /**
@@ -224,6 +275,10 @@ function mustSkipUrl($url)
     $host = parse_url($url, PHP_URL_HOST);
     if (preg_match("/\.local$/ui", $host) || preg_match("/example\.\w+$/ui", $host)) {        
         return [true, "is an example domain"];
+    }
+
+    if ($host == 'localhost' || preg_match("/\.localdomain$/", $host)) {
+        return [true, "is a localhost"];
     }
 
     return [false, null];
