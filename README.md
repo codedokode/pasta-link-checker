@@ -23,6 +23,23 @@ php checker.php -u http://example.com/
 
 Type `php checker.php --help` for help.
 
+## Testing 
+
+Choose an unused port number, start a temporary web server.
+
+```sh
+php -S 127.0.0.1:10001 -t tests/public/
+```
+
+Then run tests using phpunit in a separate console:
+
+```sh
+export LINK_CHECKER_TEST_SERVER_PORT=10001
+phpunit
+```
+
+or use [run-tests.sh](./run-tests.sh) shell script.
+
 ## Known problems / TODO
 
 - [ ] script considers all non-html pages to be invalid (PDF, images)

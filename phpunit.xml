@@ -1,0 +1,10 @@
+<phpunit
+    bootstrap="vendor/autoload.php"
+    backupGlobals="false">
+    <!-- backupGlobals causes 'Serialization of Closure' error in phpunit5.7 -->
+    <testsuites>
+        <testsuite name="main">
+            <directory>tests/</directory>
+        </testsuite>
+    </testsuites>
+</phpunit>

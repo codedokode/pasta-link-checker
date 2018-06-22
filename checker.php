@@ -25,7 +25,7 @@ $cacheLifetimeSeconds = 1800;
 $clearCache = false;
 $defaultStartUrl = 'https://github.com/codedokode/pasta/blob/master/README.md';
 // $urlTemplate = 'https://github.com/codedokode/pasta/blob/master/';
-$defaultCacertPath =  CacertBundle::getFilePath();
+$defaultCacertPath =   \Composer\CaBundle\CaBundle::getSystemCaRootBundlePath();
 $userAgent = "codedokode-link-checker-bot (+https://github.com/codedokode/pasta-link-checker)";
 
 $output = new ConsoleOutput(OutputInterface::VERBOSITY_DEBUG);

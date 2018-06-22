@@ -308,6 +308,11 @@ class Fetcher
         $mustSleep = $this->getWaitTime($url);
         $domain = $this->getDomainForPause($url);
 
+        if ($domain == '127.0.0.1') {
+            // No need to wait
+            return;
+        }
+
         if ($mustSleep > 0) {
             $this->logger->debug("Sleeping $mustSleep sec (for $domain)");
             usleep(ceil($mustSleep * 1e6));
