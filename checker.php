@@ -43,14 +43,14 @@ $inputDefinition = new InputDefinition([
         'follow',
         'f',
         InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
-        'Follow links inside this area, if not given then deduced from URLs',
+        'Follow links inside this area, if not given then deduced from starting URLs',
         []
     ),
     new InputOption(
         'clear-cache', 
         null, 
         InputOption::VALUE_NONE, 
-        'Clear cache before running the checker'
+        'Clear cache before running the checker (file cache is used to avoid redownloading all documents when the script is restarted)'
     ),
     new InputOption(
         'cacert-path', 
@@ -162,7 +162,7 @@ exit($code);
 
 function printHelp(InputDefinition $def, OutputInterface $output)
 {
-    $output->writeln(sprintf("%s - checks URLs is documents", basename(__FILE__)));
+    $output->writeln(sprintf("%s - recursively checks URLs validity in HTML documents", basename(__FILE__)));
     $output->writeln("");
 
     $descriptor = new TextDescriptor();
