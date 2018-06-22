@@ -35,4 +35,5 @@ Type `php checker.php --help` for help.
 - [ ] maybe use delay based on last 2 domain parts, not whole domain
 - [ ] maybe obey robots.txt? 
 - [ ] links like https://mega.nz/#!12345 , https://rghost.net/12345 are not checked properly
+- [ ] support some other 2xx codes like 203
 
