@@ -1,5 +1,7 @@
 # URL checker
 
+[![Build Status](https://travis-ci.org/codedokode/pasta-link-checker.svg?branch=master)](https://travis-ci.org/codedokode/pasta-link-checker)
+
 Finds broken links in .md files in a github repository.
 
 Checks all links found on the site or in .md files from a github repository. Default starting URL is hardcoded as https://github.com/codedokode/pasta/blob/master/README.md , but it can be changed using CLI arguments.
