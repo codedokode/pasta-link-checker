@@ -1,0 +1,16 @@
+language: php
+php: 
+    - '7.1'
+env:
+    - LINK_CHECKER_TEST_SERVER_PORT: 10001
+install:
+    - composer install
+before_script:
+    - "php -S 127.0.0.1 $LINK_CHECKER_TEST_SERVER_PORT -t tests/public/ &"
+git: 
+    depth: 3
+
+notifications:
+    email:
+        on_success: never
+        on_failure: never

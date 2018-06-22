@@ -1,5 +1,6 @@
 {
     "require": {
+        "php": ">=7.1",
         "symfony/dom-crawler": ">=2.0",
         "guzzlehttp/guzzle": ">=5.3",
         "symfony/console": "*",
@@ -8,9 +9,18 @@
         "php-extended/php-root-cacert-bundle": "^1",
         "psr/log": "*"
     },
+    "require-dev": {
+        "phpunit/phpunit": "^5.7",
+        "symfony/process": "^4.0"
+    },
     "autoload": {
         "psr-4": {
             "UrlChecker\\": ""
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "UrlChecker\\Tests\\": "tests"
         }
     }
 }
